@@ -1,6 +1,14 @@
 package main
 
-import "net/http"
+import (
+	"net/http"
+)
+
+func handlerHealthz(headerMap http.ResponseWriter, req *http.Request) {
+	headerMap.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	headerMap.WriteHeader(http.StatusOK)
+	headerMap.Write([]byte("OK"))
+}
 
 func main() {
 	sMux := http.NewServeMux()
