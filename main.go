@@ -45,9 +45,9 @@ func main() {
 		Handler: sMux,
 		Addr:    ":8080",
 	}
-	sMux.HandleFunc("/healthz", handlerHealthz)
-	sMux.HandleFunc("/metrics", state.handlerMetrics)
-	sMux.HandleFunc("/reset", state.handlerReset)
+	sMux.HandleFunc("GET /api/healthz", handlerHealthz)
+	sMux.HandleFunc("GET /api/metrics", state.handlerMetrics)
+	sMux.HandleFunc("POST /api/reset", state.handlerReset)
 	sMux.Handle("/app/", state.middlewareMetricsIncrease(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
 	server.ListenAndServe()
 }
