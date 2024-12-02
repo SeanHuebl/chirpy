@@ -1,13 +1,27 @@
 package main
 
 import (
+	"encoding/json"
 	"html/template"
+	"log"
 	"net/http"
 	"sync/atomic"
 )
 
 type apiConfig struct {
 	fileServerHits atomic.Int32
+}
+
+type parameters struct {
+	Body string `json:"body"`
+}
+
+type returnError struct {
+	Error string `json:"error"`
+}
+
+type returnValid struct {
+	Valid bool `json:"valid"`
 }
 
 func (cfg *apiConfig) middlewareMetricsIncrease(next http.Handler) http.Handler {
@@ -49,6 +63,49 @@ func (cfg *apiConfig) handlerReset(w http.ResponseWriter, _ *http.Request) {
 	cfg.fileServerHits.Store(0)
 }
 
+func jsonResponse(w http.ResponseWriter, httpStatus int, data []byte) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(httpStatus)
+	w.Write(data)
+}
+
+func errorResponse(w http.ResponseWriter, httpStatus int, msg string) {
+	respBody := returnError{
+		Error: msg,
+	}
+	data, err := json.Marshal(respBody)
+	if err != nil {
+		// Log the error, then adjust your response
+		log.Printf("Error marshaling JSON: %v", err)
+		// Provide a fallback response as a byte slice
+		data = []byte(`{"error":"internal server error"}`)
+	}
+	jsonResponse(w, httpStatus, data)
+}
+func handlerValidate(w http.ResponseWriter, r *http.Request) {
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, "error decoding params")
+		return
+	}
+	if len(params.Body) > 140 {
+		errorResponse(w, http.StatusBadRequest, "Chirp is too long")
+		return
+	}
+	respBodyValid := returnValid{
+		Valid: true,
+	}
+	data, err := json.Marshal(respBodyValid)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, "error marshaling data")
+		return
+	}
+	jsonResponse(w, http.StatusOK, data)
+}
+
 func main() {
 	sMux := http.NewServeMux()
 	var state apiConfig
@@ -58,7 +115,8 @@ func main() {
 	}
 	sMux.HandleFunc("GET /api/healthz", handlerHealthz)
 	sMux.HandleFunc("GET /admin/metrics", state.handlerMetrics)
-	sMux.HandleFunc("POST /api/reset", state.handlerReset)
+	sMux.HandleFunc("POST /admin/reset", state.handlerReset)
+	sMux.HandleFunc("POST /api/validate_chirp", handlerValidate)
 	sMux.Handle("/app/", state.middlewareMetricsIncrease(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
 	server.ListenAndServe()
 }
