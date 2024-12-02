@@ -1,9 +1,8 @@
 package main
 
 import (
-	"fmt"
+	"html/template"
 	"net/http"
-	"strconv"
 	"sync/atomic"
 )
 
@@ -25,11 +24,23 @@ func handlerHealthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (cfg *apiConfig) handlerMetrics(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	val := int(cfg.fileServerHits.Load())
-	writeStr := fmt.Sprintf("Hits: %v", strconv.Itoa(val))
-	w.Write([]byte(writeStr))
+
+	val := cfg.fileServerHits.Load()
+	tmpl := `
+	<!DOCTYPE html>
+	<html>
+  	<body>
+    	<h1>Welcome, Chirpy Admin</h1>
+    	<p>Chirpy has been visited {{.}} times!</p>
+  	</body>
+	</html>`
+	t, err := template.New("webpage").Parse(tmpl)
+	if err != nil {
+		http.Error(w, "error parsing template", http.StatusInternalServerError)
+	}
+	t.Execute(w, val)
 }
 
 func (cfg *apiConfig) handlerReset(w http.ResponseWriter, _ *http.Request) {
@@ -46,7 +57,7 @@ func main() {
 		Addr:    ":8080",
 	}
 	sMux.HandleFunc("GET /api/healthz", handlerHealthz)
-	sMux.HandleFunc("GET /api/metrics", state.handlerMetrics)
+	sMux.HandleFunc("GET /admin/metrics", state.handlerMetrics)
 	sMux.HandleFunc("POST /api/reset", state.handlerReset)
 	sMux.Handle("/app/", state.middlewareMetricsIncrease(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
 	server.ListenAndServe()
