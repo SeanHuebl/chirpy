@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -22,6 +23,9 @@ type returnError struct {
 
 type returnValid struct {
 	Valid bool `json:"valid"`
+}
+type returnCleaned struct {
+	CleanedBody string `json:"cleaned_body"`
 }
 
 func (cfg *apiConfig) middlewareMetricsIncrease(next http.Handler) http.Handler {
@@ -82,6 +86,27 @@ func errorResponse(w http.ResponseWriter, httpStatus int, msg string) {
 	}
 	jsonResponse(w, httpStatus, data)
 }
+
+func badWordCheck(p *parameters) (string, bool) {
+	substrings := []string{"kerfuffle", "sharbert", "fornax"}
+	replacement := "****"
+	replaced := false
+	bodySplit := strings.Split(p.Body, " ")
+	for i, str := range bodySplit {
+		for _, sub := range substrings {
+			if strings.ToLower(str) == sub {
+				bodySplit[i] = replacement
+				replaced = true
+			}
+		}
+	}
+	if !replaced {
+		return p.Body, replaced
+	}
+	cleanedBody := strings.Join(bodySplit, " ")
+	return cleanedBody, true
+}
+
 func handlerValidate(w http.ResponseWriter, r *http.Request) {
 
 	decoder := json.NewDecoder(r.Body)
@@ -95,14 +120,28 @@ func handlerValidate(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusBadRequest, "Chirp is too long")
 		return
 	}
-	respBodyValid := returnValid{
-		Valid: true,
+	var data []byte
+	body, isCleaned := badWordCheck(&params)
+	if isCleaned {
+		respBodyCleaned := returnCleaned{
+			CleanedBody: body,
+		}
+		data, err = json.Marshal(respBodyCleaned)
+		if err != nil {
+			errorResponse(w, http.StatusInternalServerError, "error marshaling data")
+			return
+		}
+	} else {
+		respBodyValid := returnValid{
+			Valid: true,
+		}
+		data, err = json.Marshal(respBodyValid)
+		if err != nil {
+			errorResponse(w, http.StatusInternalServerError, "error marshaling data")
+			return
+		}
 	}
-	data, err := json.Marshal(respBodyValid)
-	if err != nil {
-		errorResponse(w, http.StatusInternalServerError, "error marshaling data")
-		return
-	}
+
 	jsonResponse(w, http.StatusOK, data)
 }
 
