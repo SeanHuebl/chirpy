@@ -1,16 +1,24 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
+
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
+	"github.com/seanhuebl/chirpy/internal/database"
 )
 
 type apiConfig struct {
 	fileServerHits atomic.Int32
+	dbQueries      *database.Queries
 }
 
 type parameters struct {
@@ -139,6 +147,16 @@ func main() {
 		Handler: sMux,
 		Addr:    ":8080",
 	}
+	godotenv.Load()
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	dbQueries := database.New(db)
+	state.dbQueries = dbQueries
+
 	sMux.HandleFunc("GET /api/healthz", handlerHealthz)
 	sMux.HandleFunc("GET /admin/metrics", state.handlerMetrics)
 	sMux.HandleFunc("POST /admin/reset", state.handlerReset)
