@@ -21,9 +21,6 @@ type returnError struct {
 	Error string `json:"error"`
 }
 
-type returnValid struct {
-	Valid bool `json:"valid"`
-}
 type returnCleaned struct {
 	CleanedBody string `json:"cleaned_body"`
 }
@@ -87,7 +84,7 @@ func errorResponse(w http.ResponseWriter, httpStatus int, msg string) {
 	jsonResponse(w, httpStatus, data)
 }
 
-func badWordCheck(p *parameters) (string, bool) {
+func badWordCheck(p *parameters) string {
 	substrings := []string{"kerfuffle", "sharbert", "fornax"}
 	replacement := "****"
 	replaced := false
@@ -101,10 +98,10 @@ func badWordCheck(p *parameters) (string, bool) {
 		}
 	}
 	if !replaced {
-		return p.Body, replaced
+		return p.Body
 	}
 	cleanedBody := strings.Join(bodySplit, " ")
-	return cleanedBody, true
+	return cleanedBody
 }
 
 func handlerValidate(w http.ResponseWriter, r *http.Request) {
@@ -121,25 +118,15 @@ func handlerValidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var data []byte
-	body, isCleaned := badWordCheck(&params)
-	if isCleaned {
-		respBodyCleaned := returnCleaned{
-			CleanedBody: body,
-		}
-		data, err = json.Marshal(respBodyCleaned)
-		if err != nil {
-			errorResponse(w, http.StatusInternalServerError, "error marshaling data")
-			return
-		}
-	} else {
-		respBodyValid := returnValid{
-			Valid: true,
-		}
-		data, err = json.Marshal(respBodyValid)
-		if err != nil {
-			errorResponse(w, http.StatusInternalServerError, "error marshaling data")
-			return
-		}
+	body := badWordCheck(&params)
+
+	respBodyCleaned := returnCleaned{
+		CleanedBody: body,
+	}
+	data, err = json.Marshal(respBodyCleaned)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, "error marshaling data")
+		return
 	}
 
 	jsonResponse(w, http.StatusOK, data)
