@@ -10,7 +10,10 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+	"time"
 
+	"github.com/google/uuid"
+	"github.com/jinzhu/copier"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/seanhuebl/chirpy/internal/database"
@@ -19,10 +22,12 @@ import (
 type apiConfig struct {
 	fileServerHits atomic.Int32
 	dbQueries      *database.Queries
+	platform       string
 }
 
 type parameters struct {
-	Body string `json:"body"`
+	Body  string `json:"body"`
+	Email string `json:"email"`
 }
 
 type returnError struct {
@@ -31,6 +36,13 @@ type returnError struct {
 
 type returnCleaned struct {
 	CleanedBody string `json:"cleaned_body"`
+}
+
+type user struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
 }
 
 func (cfg *apiConfig) middlewareMetricsIncrease(next http.Handler) http.Handler {
@@ -66,10 +78,18 @@ func (cfg *apiConfig) handlerMetrics(w http.ResponseWriter, _ *http.Request) {
 	t.Execute(w, val)
 }
 
-func (cfg *apiConfig) handlerReset(w http.ResponseWriter, _ *http.Request) {
+func (cfg *apiConfig) handlerReset(w http.ResponseWriter, r *http.Request) {
+	if cfg.platform != "dev" {
+		errorResponse(w, http.StatusForbidden, "access forbidden")
+	}
+	err := cfg.dbQueries.Reset(r.Context())
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, "error resetting users table")
+	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	cfg.fileServerHits.Store(0)
+
 }
 
 func jsonResponse(w http.ResponseWriter, httpStatus int, data []byte) {
@@ -118,20 +138,19 @@ func handlerValidate(w http.ResponseWriter, r *http.Request) {
 	params := parameters{}
 	err := decoder.Decode(&params)
 	if err != nil {
-		errorResponse(w, http.StatusInternalServerError, "error decoding params")
+		errorResponse(w, http.StatusInternalServerError, "error decoding JSON")
 		return
 	}
 	if len(params.Body) > 140 {
 		errorResponse(w, http.StatusBadRequest, "Chirp is too long")
 		return
 	}
-	var data []byte
 	body := badWordCheck(&params)
 
 	respBodyCleaned := returnCleaned{
 		CleanedBody: body,
 	}
-	data, err = json.Marshal(respBodyCleaned)
+	data, err := json.Marshal(respBodyCleaned)
 	if err != nil {
 		errorResponse(w, http.StatusInternalServerError, "error marshaling data")
 		return
@@ -140,15 +159,39 @@ func handlerValidate(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusOK, data)
 }
 
+func (Cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, "error decoding JSON")
+	}
+	dbUser, err := Cfg.dbQueries.CreateUser(r.Context(), params.Email)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, "error creating user")
+	}
+	var user user
+	err = copier.Copy(&user, &dbUser)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, "error mapping structs")
+	}
+	data, err := json.Marshal(user)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, "error marshaling data")
+	}
+	jsonResponse(w, http.StatusCreated, data)
+}
+
 func main() {
+	godotenv.Load()
 	sMux := http.NewServeMux()
 	var state apiConfig
 	server := http.Server{
 		Handler: sMux,
 		Addr:    ":8080",
 	}
-	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
+	state.platform = os.Getenv("PLATFORM")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		fmt.Println(err)
@@ -161,6 +204,7 @@ func main() {
 	sMux.HandleFunc("GET /admin/metrics", state.handlerMetrics)
 	sMux.HandleFunc("POST /admin/reset", state.handlerReset)
 	sMux.HandleFunc("POST /api/validate_chirp", handlerValidate)
+	sMux.HandleFunc("POST /api/users", state.handlerUsers)
 	sMux.Handle("/app/", state.middlewareMetricsIncrease(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
 	server.ListenAndServe()
 }

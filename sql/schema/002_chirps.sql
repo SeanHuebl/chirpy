@@ -1,9 +1,11 @@
 -- +goose Up
-CREATE TABLE users (
+CREATE TABLE chirps (
     id UUID PRIMARY KEY,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    email TEXT UNIQUE NOT NULL
+    body TEXT NOT NULL,
+    user_id UUID,
+    CONSTRAINT user_fk FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 -- +goose Down
-DROP TABLE users CASCADE;
+DELETE TABLE chirps CASCADE;
