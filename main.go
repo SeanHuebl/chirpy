@@ -200,6 +200,31 @@ func (cfg *apiConfig) handlerGetAllChirps(w http.ResponseWriter, r *http.Request
 	}
 	jsonResponse(w, http.StatusOK, data)
 }
+
+func (cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request) {
+	chirpID, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	dbChirp, err := cfg.dbQueries.GetChirp(context.Background(), chirpID)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	var chirp chirp
+	err = copier.Copy(&chirp, dbChirp)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	data, err := json.Marshal(chirp)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	jsonResponse(w, http.StatusOK, data)
+}
 func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	params := parameters{}
@@ -251,6 +276,7 @@ func main() {
 	sMux.HandleFunc("POST /api/chirps", state.handlerChirps)
 	sMux.HandleFunc("POST /api/users", state.handlerUsers)
 	sMux.HandleFunc("GET /api/chirps", state.handlerGetAllChirps)
+	sMux.HandleFunc("GET /api/chirps/{chirpID}", state.handlerGetChirp)
 	sMux.Handle("/app/", state.middlewareMetricsIncrease(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
 	server.ListenAndServe()
 }

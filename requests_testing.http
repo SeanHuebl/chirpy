@@ -25,6 +25,7 @@ Content-Type: application/json
 }
 
 ### Create a chirp using the extracted userID
+# @name chirp
 POST https://urban-space-parakeet-jw5w77vvprw2p4q5-8080.app.github.dev/api/chirps HTTP/1.1
 Content-Type: application/json
 
@@ -32,11 +33,15 @@ Content-Type: application/json
   "body": "Hello, universe!!",
   "user_id": "{{userID}}"
 }
+###
+@chirpid={{chirp.response.body.id}}
 
 ###
 GET https://urban-space-parakeet-jw5w77vvprw2p4q5-8080.app.github.dev/api/chirps HTTP/1.1
 Content-Type: application/json
-
+###
+GET https://urban-space-parakeet-jw5w77vvprw2p4q5-8080.app.github.dev/api/chirps/{{chirpid}} HTTP/1.1
+Content-Type: application/json
 ###
 // local machine testing
 POST http://localhost:8080/api/validate_chirp HTTP/1.1
