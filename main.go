@@ -27,9 +27,9 @@ type apiConfig struct {
 }
 
 type parameters struct {
-	Body   string    `json:"body"`
-	Email  string    `json:"email"`
-	UserID uuid.UUID `json:"user_id"`
+	Body   string `json:"body"`
+	Email  string `json:"email"`
+	UserID string `json:"user_id"`
 }
 
 type returnError struct {
@@ -144,7 +144,7 @@ func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, r *http.Request) {
 	params := parameters{}
 	err := decoder.Decode(&params)
 	if err != nil {
-		errorResponse(w, http.StatusInternalServerError, "error decoding JSON")
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
 		return
 	}
 	if len(params.Body) > 140 {
@@ -152,43 +152,77 @@ func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cleanedBody := badWordCheck(&params)
-	dbChirp, err := cfg.dbQueries.CreateChirp(context.Background(), database.CreateChirpParams{Body: cleanedBody, UserID: params.UserID})
+	userID, err := uuid.Parse(params.UserID)
+	if err != nil {
+		errorResponse(w, http.StatusBadRequest, "Invalid user_id: must be a valid UUID")
+		return
+	}
+	dbChirp, err := cfg.dbQueries.CreateChirp(context.Background(), database.CreateChirpParams{Body: cleanedBody, UserID: userID})
 	if err != nil {
 		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
 	}
 	var chirp chirp
 	err = copier.Copy(&chirp, &dbChirp)
 	if err != nil {
-		errorResponse(w, http.StatusInternalServerError, "error mapping chirp struct")
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
 	}
 	data, err := json.Marshal(chirp)
 	if err != nil {
-		errorResponse(w, http.StatusInternalServerError, "error marshaling data")
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
 		return
 	}
 
 	jsonResponse(w, http.StatusCreated, data)
 }
+func (cfg *apiConfig) handlerGetAllChirps(w http.ResponseWriter, r *http.Request) {
+	dbChirps, err := cfg.dbQueries.GetChirps(context.Background())
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
 
-func (Cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
+	var chirps []chirp
+
+	for _, dbChirp := range dbChirps {
+		var c chirp
+		err := copier.Copy(&c, &dbChirp)
+		if err != nil {
+			errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+			return
+		}
+		chirps = append(chirps, c)
+	}
+	data, err := json.Marshal(chirps)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+	}
+	jsonResponse(w, http.StatusOK, data)
+}
+func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	params := parameters{}
 	err := decoder.Decode(&params)
 	if err != nil {
-		errorResponse(w, http.StatusInternalServerError, "error decoding JSON")
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
 	}
-	dbUser, err := Cfg.dbQueries.CreateUser(r.Context(), params.Email)
+	dbUser, err := cfg.dbQueries.CreateUser(r.Context(), params.Email)
 	if err != nil {
-		errorResponse(w, http.StatusInternalServerError, "error creating user")
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
 	}
 	var user user
 	err = copier.Copy(&user, &dbUser)
 	if err != nil {
-		errorResponse(w, http.StatusInternalServerError, "error mapping user struct")
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
 	}
 	data, err := json.Marshal(user)
 	if err != nil {
-		errorResponse(w, http.StatusInternalServerError, "error marshaling data")
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
 	}
 	jsonResponse(w, http.StatusCreated, data)
 }
@@ -216,6 +250,7 @@ func main() {
 	sMux.HandleFunc("POST /admin/reset", state.handlerReset)
 	sMux.HandleFunc("POST /api/chirps", state.handlerChirps)
 	sMux.HandleFunc("POST /api/users", state.handlerUsers)
+	sMux.HandleFunc("GET /api/chirps", state.handlerGetAllChirps)
 	sMux.Handle("/app/", state.middlewareMetricsIncrease(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
 	server.ListenAndServe()
 }

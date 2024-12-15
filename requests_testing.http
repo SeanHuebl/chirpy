@@ -1,19 +1,41 @@
 // codespaces testing
-POST https://urban-space-parakeet-jw5w77vvprw2p4q5-8080.app.github.dev/api/validate_chirp HTTP/1.1
-content-type: application/json
+### Admin reset (optional, if required to initialize state)
+POST https://urban-space-parakeet-jw5w77vvprw2p4q5-8080.app.github.dev/admin/reset HTTP/1.1
+Content-Type: application/json
+
+### Create a user
+# @name user
+POST https://urban-space-parakeet-jw5w77vvprw2p4q5-8080.app.github.dev/api/users HTTP/1.1
+Content-Type: application/json
 
 {
-    "body": "hello world"
+  "email": "user@example.com"
+}
+
+### Extract userID from the previous response
+@userID={{user.response.body.id}}
+
+### Create a chirp using the extracted userID
+POST https://urban-space-parakeet-jw5w77vvprw2p4q5-8080.app.github.dev/api/chirps HTTP/1.1
+Content-Type: application/json
+
+{
+  "body": "Hello, world!",
+  "user_id": "{{userID}}"
+}
+
+### Create a chirp using the extracted userID
+POST https://urban-space-parakeet-jw5w77vvprw2p4q5-8080.app.github.dev/api/chirps HTTP/1.1
+Content-Type: application/json
+
+{
+  "body": "Hello, universe!!",
+  "user_id": "{{userID}}"
 }
 
 ###
-
-POST https://urban-space-parakeet-jw5w77vvprw2p4q5-8080.app.github.dev/api/validate_chirp HTTP/1.1
-content-type: application/json
-
-{
-    "body": "lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
-}
+GET https://urban-space-parakeet-jw5w77vvprw2p4q5-8080.app.github.dev/api/chirps HTTP/1.1
+Content-Type: application/json
 
 ###
 // local machine testing
@@ -25,17 +47,15 @@ content-type: application/json
 }
 
 ###
-
+# @name lhuser
 POST http://localhost:8080/api/users HTTP/1.1
 content-type: application/json
 
 {
   "email": "user@example.com"
 }
-
-### Extract userID from the response
-@userID={{response.body.id}}
-
+### Exctract localhost userID
+@lhuserID={{lhuser.response.body.id}}
 ###
 
 POST http://localhost:8080/admin/reset HTTP/1.1
