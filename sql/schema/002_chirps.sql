@@ -4,8 +4,8 @@ CREATE TABLE chirps (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     body TEXT NOT NULL,
-    user_id UUID,
+    user_id UUID NOT NULL,
     CONSTRAINT user_fk FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 -- +goose Down
-DELETE TABLE chirps CASCADE;
+DROP TABLE chirps CASCADE;

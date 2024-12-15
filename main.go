@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -26,16 +27,13 @@ type apiConfig struct {
 }
 
 type parameters struct {
-	Body  string `json:"body"`
-	Email string `json:"email"`
+	Body   string    `json:"body"`
+	Email  string    `json:"email"`
+	UserID uuid.UUID `json:"user_id"`
 }
 
 type returnError struct {
 	Error string `json:"error"`
-}
-
-type returnCleaned struct {
-	CleanedBody string `json:"cleaned_body"`
 }
 
 type user struct {
@@ -43,6 +41,14 @@ type user struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+}
+
+type chirp struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string    `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
 }
 
 func (cfg *apiConfig) middlewareMetricsIncrease(next http.Handler) http.Handler {
@@ -132,7 +138,7 @@ func badWordCheck(p *parameters) string {
 	return cleanedBody
 }
 
-func handlerValidate(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, r *http.Request) {
 
 	decoder := json.NewDecoder(r.Body)
 	params := parameters{}
@@ -145,18 +151,23 @@ func handlerValidate(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusBadRequest, "Chirp is too long")
 		return
 	}
-	body := badWordCheck(&params)
-
-	respBodyCleaned := returnCleaned{
-		CleanedBody: body,
+	cleanedBody := badWordCheck(&params)
+	dbChirp, err := cfg.dbQueries.CreateChirp(context.Background(), database.CreateChirpParams{Body: cleanedBody, UserID: params.UserID})
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
 	}
-	data, err := json.Marshal(respBodyCleaned)
+	var chirp chirp
+	err = copier.Copy(&chirp, &dbChirp)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, "error mapping chirp struct")
+	}
+	data, err := json.Marshal(chirp)
 	if err != nil {
 		errorResponse(w, http.StatusInternalServerError, "error marshaling data")
 		return
 	}
 
-	jsonResponse(w, http.StatusOK, data)
+	jsonResponse(w, http.StatusCreated, data)
 }
 
 func (Cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +184,7 @@ func (Cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
 	var user user
 	err = copier.Copy(&user, &dbUser)
 	if err != nil {
-		errorResponse(w, http.StatusInternalServerError, "error mapping structs")
+		errorResponse(w, http.StatusInternalServerError, "error mapping user struct")
 	}
 	data, err := json.Marshal(user)
 	if err != nil {
@@ -203,7 +214,7 @@ func main() {
 	sMux.HandleFunc("GET /api/healthz", handlerHealthz)
 	sMux.HandleFunc("GET /admin/metrics", state.handlerMetrics)
 	sMux.HandleFunc("POST /admin/reset", state.handlerReset)
-	sMux.HandleFunc("POST /api/validate_chirp", handlerValidate)
+	sMux.HandleFunc("POST /api/chirps", state.handlerChirps)
 	sMux.HandleFunc("POST /api/users", state.handlerUsers)
 	sMux.Handle("/app/", state.middlewareMetricsIncrease(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
 	server.ListenAndServe()
