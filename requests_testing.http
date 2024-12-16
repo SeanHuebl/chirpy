@@ -9,7 +9,8 @@ POST https://urban-space-parakeet-jw5w77vvprw2p4q5-8080.app.github.dev/api/users
 Content-Type: application/json
 
 {
-  "email": "user@example.com"
+  "password": "!Password1",
+  "email": "lane@example.com"
 }
 
 ### Extract userID from the previous response
@@ -36,7 +37,38 @@ Content-Type: application/json
 ###
 @chirpid={{chirp.response.body.id}}
 
+### Correct pwd
+
+POST https://urban-space-parakeet-jw5w77vvprw2p4q5-8080.app.github.dev/api/login HTTP/1.1
+Content-Type: application/json
+
+{
+  "password": "!Password1",
+  "email": "lane@example.com"
+}
+
+### Incorrect pwd
+
+POST https://urban-space-parakeet-jw5w77vvprw2p4q5-8080.app.github.dev/api/login HTTP/1.1
+Content-Type: application/json
+
+{
+  "password": "!Password2",
+  "email": "lane@example.com"
+}
+
+### Incorrect email
+
+POST https://urban-space-parakeet-jw5w77vvprw2p4q5-8080.app.github.dev/api/login HTTP/1.1
+Content-Type: application/json
+
+{
+  "password": "!Password1",
+  "email": "lane@example.org"
+}
+
 ###
+
 GET https://urban-space-parakeet-jw5w77vvprw2p4q5-8080.app.github.dev/api/chirps HTTP/1.1
 Content-Type: application/json
 ###

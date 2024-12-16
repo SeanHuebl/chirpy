@@ -236,11 +236,11 @@ func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
 		return
 	}
-	err = ValidatePassword(params.Password)
+	/* err = ValidatePassword(params.Password)
 	if err != nil {
 		errorResponse(w, http.StatusBadRequest, fmt.Sprint(err))
 		return
-	}
+	} */
 	hashedPwd, err := auth.HashPassword(params.Password)
 	if err != nil {
 		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
@@ -295,7 +295,35 @@ func ValidatePassword(password string) error {
 }
 
 func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
-
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	dbUser, err := cfg.dbQueries.GetUserByEmail(context.Background(), params.Email)
+	if err != nil {
+		errorResponse(w, http.StatusUnauthorized, "Incorrect email or password")
+		return
+	}
+	err = auth.CheckPasswordHash(params.Password, dbUser.HashedPassword)
+	if err != nil {
+		errorResponse(w, http.StatusUnauthorized, "Incorrect email or password")
+		return
+	}
+	var user user
+	err = copier.Copy(&user, &dbUser)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	data, err := json.Marshal(user)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	jsonResponse(w, http.StatusOK, data)
 }
 func main() {
 	godotenv.Load()
