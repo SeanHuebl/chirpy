@@ -57,7 +57,8 @@ POST http://localhost:8080/api/users HTTP/1.1
 content-type: application/json
 
 {
-  "email": "user@example.com"
+  "password": "!Password1",
+  "email": "lane@example.com"
 }
 ### Exctract localhost userID
 @lhuserID={{lhuser.response.body.id}}

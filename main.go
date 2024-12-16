@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/jinzhu/copier"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/seanhuebl/chirpy/internal/auth"
 	"github.com/seanhuebl/chirpy/internal/database"
 )
 
@@ -27,9 +29,10 @@ type apiConfig struct {
 }
 
 type parameters struct {
-	Body   string `json:"body"`
-	Email  string `json:"email"`
-	UserID string `json:"user_id"`
+	Body     string `json:"body"`
+	Email    string `json:"email"`
+	UserID   string `json:"user_id"`
+	Password string `json:"password"`
 }
 
 type returnError struct {
@@ -233,7 +236,17 @@ func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
 		return
 	}
-	dbUser, err := cfg.dbQueries.CreateUser(r.Context(), params.Email)
+	err = ValidatePassword(params.Password)
+	if err != nil {
+		errorResponse(w, http.StatusBadRequest, fmt.Sprint(err))
+		return
+	}
+	hashedPwd, err := auth.HashPassword(params.Password)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	dbUser, err := cfg.dbQueries.CreateUser(r.Context(), database.CreateUserParams{Email: params.Email, HashedPassword: hashedPwd})
 	if err != nil {
 		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
 		return
@@ -252,6 +265,38 @@ func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusCreated, data)
 }
 
+func ValidatePassword(password string) error {
+	// Minimum length
+	if len(password) < 8 {
+		return fmt.Errorf("password must be at least 8 characters long")
+	}
+
+	// At least one uppercase letter
+	if matched, _ := regexp.MatchString(`[A-Z]`, password); !matched {
+		return fmt.Errorf("password must contain at least one uppercase letter")
+	}
+
+	// At least one lowercase letter
+	if matched, _ := regexp.MatchString(`[a-z]`, password); !matched {
+		return fmt.Errorf("password must contain at least one lowercase letter")
+	}
+
+	// At least one digit
+	if matched, _ := regexp.MatchString(`\d`, password); !matched {
+		return fmt.Errorf("password must contain at least one digit")
+	}
+
+	// At least one special character
+	if matched, _ := regexp.MatchString(`[!@#\$%\^&\*\(\)_\+\-=\[\]\{\};':"\\|,.<>\/?]`, password); !matched {
+		return fmt.Errorf("password must contain at least one special character")
+	}
+
+	return nil
+}
+
+func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
+
+}
 func main() {
 	godotenv.Load()
 	sMux := http.NewServeMux()
@@ -277,6 +322,7 @@ func main() {
 	sMux.HandleFunc("POST /api/users", state.handlerUsers)
 	sMux.HandleFunc("GET /api/chirps", state.handlerGetAllChirps)
 	sMux.HandleFunc("GET /api/chirps/{chirpID}", state.handlerGetChirp)
+	sMux.HandleFunc("POST /api/login", state.handlerLogin)
 	sMux.Handle("/app/", state.middlewareMetricsIncrease(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
 	server.ListenAndServe()
 }
