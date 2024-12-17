@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -25,12 +26,12 @@ func CheckPasswordHash(password, hash string) error {
 
 func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, error) {
 	token := jwt.NewWithClaims(
-		jwt.SigningMethodHS256, 
+		jwt.SigningMethodHS256,
 		jwt.RegisteredClaims{
-			Issuer: "chirpy", 
-			IssuedAt: jwt.NewNumericDate(time.Now()), 
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiresIn)), 
-			Subject: userID.String(),
+			Issuer:    "chirpy",
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiresIn)),
+			Subject:   userID.String(),
 		},
 	)
 	signedToken, err := token.SignedString([]byte(tokenSecret))
@@ -40,6 +41,33 @@ func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (str
 	return signedToken, nil
 }
 
-/* func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
-	return nil, nil
-} */
+func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return []byte(tokenSecret), nil
+	})
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("token parsing failed: %v", err)
+	}
+	if !token.Valid {
+		return uuid.Nil, fmt.Errorf("token is invalid")
+	}
+	claims, ok := token.Claims.(*jwt.RegisteredClaims)
+	if !ok {
+		fmt.Println("invalid claims format")
+	}
+	if claims.Issuer != "chirpy" {
+		return uuid.Nil, fmt.Errorf("invalid issuer: %v", claims.Issuer)
+	}
+	if claims.Subject == "" {
+		return uuid.Nil, fmt.Errorf("missing subject in token")
+	}
+
+	userID, err := uuid.Parse(claims.Subject)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("error parsing userID: %v", err)
+	}
+	return userID, nil
+}
