@@ -25,6 +25,9 @@ func CheckPasswordHash(password, hash string) error {
 }
 
 func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, error) {
+	if tokenSecret == "" {
+		return "", fmt.Errorf("invalid secret")
+	}
 	token := jwt.NewWithClaims(
 		jwt.SigningMethodHS256,
 		jwt.RegisteredClaims{
