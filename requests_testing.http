@@ -94,8 +94,17 @@ content-type: application/json
 }
 ### Exctract localhost userID
 @lhuserID={{lhuser.response.body.id}}
-###
 
+###
+POST http://localhost:8080/api/login HTTP/1.1
+content-type: application/json
+
+{
+  "password": "!Password1",
+  "email": "lane@example.com"
+}
+
+###
 POST http://localhost:8080/admin/reset HTTP/1.1
 content-type: application/json
 

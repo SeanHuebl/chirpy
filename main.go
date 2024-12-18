@@ -26,13 +26,15 @@ type apiConfig struct {
 	fileServerHits atomic.Int32
 	dbQueries      *database.Queries
 	platform       string
+	secretString   string
 }
 
 type parameters struct {
-	Body     string `json:"body"`
-	Email    string `json:"email"`
-	UserID   string `json:"user_id"`
-	Password string `json:"password"`
+	Body             string `json:"body"`
+	Email            string `json:"email"`
+	UserID           string `json:"user_id"`
+	Password         string `json:"password"`
+	ExpiresInSeconds int    `json:"expires_in_seconds"`
 }
 
 type returnError struct {
@@ -44,6 +46,7 @@ type user struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+	Token     string    `json:"token"`
 }
 
 type chirp struct {
@@ -150,16 +153,31 @@ func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
 		return
 	}
-	if len(params.Body) > 140 {
-		errorResponse(w, http.StatusBadRequest, "Chirp is too long")
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		errorResponse(w, http.StatusUnauthorized, fmt.Sprint(err))
 		return
 	}
-	cleanedBody := badWordCheck(&params)
 	userID, err := uuid.Parse(params.UserID)
 	if err != nil {
 		errorResponse(w, http.StatusBadRequest, "Invalid user_id: must be a valid UUID")
 		return
 	}
+	tokenUser, err := auth.ValidateJWT(token, cfg.secretString)
+	if err != nil {
+		errorResponse(w, http.StatusUnauthorized, fmt.Sprint(err))
+		return
+	}
+	if tokenUser != userID {
+		errorResponse(w, http.StatusUnauthorized, fmt.Sprint(err))
+		return
+	}
+
+	if len(params.Body) > 140 {
+		errorResponse(w, http.StatusBadRequest, "Chirp is too long")
+		return
+	}
+	cleanedBody := badWordCheck(&params)
 	dbChirp, err := cfg.dbQueries.CreateChirp(context.Background(), database.CreateChirpParams{Body: cleanedBody, UserID: userID})
 	if err != nil {
 		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
@@ -200,6 +218,7 @@ func (cfg *apiConfig) handlerGetAllChirps(w http.ResponseWriter, r *http.Request
 	data, err := json.Marshal(chirps)
 	if err != nil {
 		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
 	}
 	jsonResponse(w, http.StatusOK, data)
 }
@@ -312,12 +331,23 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusUnauthorized, "Incorrect email or password")
 		return
 	}
+	if params.ExpiresInSeconds == 0 || params.ExpiresInSeconds > 3600 {
+		params.ExpiresInSeconds = 3600
+	}
+
 	var user user
 	err = copier.Copy(&user, &dbUser)
 	if err != nil {
 		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
 		return
 	}
+	token, err := auth.MakeJWT(user.ID, cfg.secretString, time.Duration(params.ExpiresInSeconds)*time.Second)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	user.Token = token
+	w.Header().Set("Authorization", "Bearer "+token)
 	data, err := json.Marshal(user)
 	if err != nil {
 		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
@@ -335,6 +365,7 @@ func main() {
 	}
 	dbURL := os.Getenv("DB_URL")
 	state.platform = os.Getenv("PLATFORM")
+	state.secretString = os.Getenv("JWT_SECRET")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		fmt.Println(err)
