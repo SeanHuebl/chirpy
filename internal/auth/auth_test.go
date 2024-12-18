@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
@@ -140,6 +141,59 @@ func TestValidateJWT(t *testing.T) {
 		_, err = ValidateJWT(signedToken, tokenSecret)
 		if err == nil {
 			t.Fatalf("expected error for invalid issuer, got nil")
+		}
+	})
+}
+
+func TestGetBearerToken(t *testing.T) {
+	t.Run("Valid Authorization Header", func(t *testing.T) {
+		headers := http.Header{}
+		headers.Set("Authorization", "Bearer validtoken123")
+
+		token, err := GetBearerToken(headers)
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if token != "validtoken123" {
+			t.Fatalf("expected token 'validtoken123', got: %v", token)
+		}
+	})
+
+	t.Run("Missing Authorization Header", func(t *testing.T) {
+		headers := http.Header{}
+
+		_, err := GetBearerToken(headers)
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if err.Error() != "authorization header must start with 'Bearer '" {
+			t.Fatalf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("Invalid Authorization Prefix", func(t *testing.T) {
+		headers := http.Header{}
+		headers.Set("Authorization", "Basic sometoken123")
+
+		_, err := GetBearerToken(headers)
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if err.Error() != "authorization header must start with 'Bearer '" {
+			t.Fatalf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("Empty Token", func(t *testing.T) {
+		headers := http.Header{}
+		headers.Set("Authorization", "Bearer ")
+
+		_, err := GetBearerToken(headers)
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if err.Error() != "token does not exist" {
+			t.Fatalf("unexpected error message: %v", err)
 		}
 	})
 }
