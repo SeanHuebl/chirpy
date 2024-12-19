@@ -96,6 +96,7 @@ content-type: application/json
 @lhuserID={{lhuser.response.body.id}}
 
 ###
+# @name login
 POST http://localhost:8080/api/login HTTP/1.1
 content-type: application/json
 
@@ -103,7 +104,8 @@ content-type: application/json
   "password": "!Password1",
   "email": "lane@example.com"
 }
-
+###
+@JWT={{login.response.headers.Authorization}}
 ###
 POST http://localhost:8080/admin/reset HTTP/1.1
 content-type: application/json
@@ -111,8 +113,9 @@ content-type: application/json
 ###
 POST http://localhost:8080/api/chirps HTTP/1.1
 content-type: application/json
+Authorization: {{JWT}}
 
 {
   "body": "Hello, world!",
-  "user_id": "{{userID}}"
+  "user_id": "{{lhuserID}}"
 }

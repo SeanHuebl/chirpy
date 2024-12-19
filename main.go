@@ -158,17 +158,8 @@ func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusUnauthorized, fmt.Sprint(err))
 		return
 	}
-	userID, err := uuid.Parse(params.UserID)
+	userID, err := auth.ValidateJWT(token, cfg.secretString)
 	if err != nil {
-		errorResponse(w, http.StatusBadRequest, "Invalid user_id: must be a valid UUID")
-		return
-	}
-	tokenUser, err := auth.ValidateJWT(token, cfg.secretString)
-	if err != nil {
-		errorResponse(w, http.StatusUnauthorized, fmt.Sprint(err))
-		return
-	}
-	if tokenUser != userID {
 		errorResponse(w, http.StatusUnauthorized, fmt.Sprint(err))
 		return
 	}
