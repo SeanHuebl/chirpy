@@ -105,7 +105,8 @@ content-type: application/json
   "email": "lane@example.com"
 }
 ###
-@JWT={{login.response.headers.Authorization}}
+@JWT=Bearer {{login.response.body.token}}
+@refresh=Bearer {{login.response.body.refresh_token}}
 ###
 POST http://localhost:8080/admin/reset HTTP/1.1
 content-type: application/json
@@ -119,3 +120,12 @@ Authorization: {{JWT}}
   "body": "Hello, world!",
   "user_id": "{{lhuserID}}"
 }
+###
+POST http://localhost:8080/api/refresh HTTP/1.1
+content-type: application/json
+Authorization: {{refresh}}
+
+###
+POST http://localhost:8080/api/revoke HTTP/1.1
+content-type: application/json
+Authorization: {{refresh}}

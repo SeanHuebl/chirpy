@@ -30,11 +30,10 @@ type apiConfig struct {
 }
 
 type parameters struct {
-	Body             string `json:"body"`
-	Email            string `json:"email"`
-	UserID           string `json:"user_id"`
-	Password         string `json:"password"`
-	ExpiresInSeconds int    `json:"expires_in_seconds"`
+	Body     string `json:"body"`
+	Email    string `json:"email"`
+	UserID   string `json:"user_id"`
+	Password string `json:"password"`
 }
 
 type returnError struct {
@@ -42,11 +41,12 @@ type returnError struct {
 }
 
 type user struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
-	Token     string    `json:"token"`
+	ID           uuid.UUID `json:"id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Email        string    `json:"email"`
+	Token        string    `json:"token"`
+	RefreshToken string    `json:"refresh_token"`
 }
 
 type chirp struct {
@@ -322,9 +322,6 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusUnauthorized, "Incorrect email or password")
 		return
 	}
-	if params.ExpiresInSeconds == 0 || params.ExpiresInSeconds > 3600 {
-		params.ExpiresInSeconds = 3600
-	}
 
 	var user user
 	err = copier.Copy(&user, &dbUser)
@@ -332,19 +329,69 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
 		return
 	}
-	token, err := auth.MakeJWT(user.ID, cfg.secretString, time.Duration(params.ExpiresInSeconds)*time.Second)
+	token, err := auth.MakeJWT(user.ID, cfg.secretString, time.Hour)
 	if err != nil {
 		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
 		return
 	}
 	user.Token = token
-	w.Header().Set("Authorization", "Bearer "+token)
+	refreshToken, err := auth.MakeRefreshToken()
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	err = cfg.dbQueries.CreateRefreshToken(context.Background(), database.CreateRefreshTokenParams{Token: refreshToken, UserID: user.ID})
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	user.RefreshToken = refreshToken
 	data, err := json.Marshal(user)
 	if err != nil {
 		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
 		return
 	}
 	jsonResponse(w, http.StatusOK, data)
+}
+
+func (cfg *apiConfig) HandlerRefresh(w http.ResponseWriter, r *http.Request) {
+	refreshToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		errorResponse(w, http.StatusUnauthorized, fmt.Sprint(err))
+		return
+	}
+
+	dbUser, err := cfg.dbQueries.GetUserByRefreshToken(context.Background(), refreshToken)
+	if err != nil {
+		errorResponse(w, http.StatusUnauthorized, "token not found")
+		return
+	}
+	if dbUser.RevokedAt.Time.After(time.Now()) {
+		errorResponse(w, http.StatusUnauthorized, "expired token")
+		return
+	}
+	tokenJSON := map[string]interface{}{
+		"token": dbUser.Token,
+	}
+	data, err := json.Marshal(tokenJSON)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	jsonResponse(w, http.StatusOK, data)
+}
+
+func (cfg *apiConfig) handlerRevoke(w http.ResponseWriter, r *http.Request) {
+	refreshToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		errorResponse(w, http.StatusUnauthorized, fmt.Sprint(err))
+		return
+	}
+	err = cfg.dbQueries.RevokeRefreshToken(context.Background(), refreshToken)
+	if err != nil {
+		errorResponse(w, http.StatusUnauthorized, fmt.Sprint(err))
+	}
+	jsonResponse(w, http.StatusNoContent, nil)
 }
 func main() {
 	godotenv.Load()
@@ -373,6 +420,8 @@ func main() {
 	sMux.HandleFunc("GET /api/chirps", state.handlerGetAllChirps)
 	sMux.HandleFunc("GET /api/chirps/{chirpID}", state.handlerGetChirp)
 	sMux.HandleFunc("POST /api/login", state.handlerLogin)
+	sMux.HandleFunc("POST /api/refresh", state.HandlerRefresh)
+	sMux.HandleFunc("POST /api/revoke", state.handlerRevoke)
 	sMux.Handle("/app/", state.middlewareMetricsIncrease(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
 	server.ListenAndServe()
 }
