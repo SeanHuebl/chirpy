@@ -275,6 +275,51 @@ func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusCreated, data)
 }
 
+func (cfg *apiConfig) handlerUpdateUser(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") == "" {
+		errorResponse(w, http.StatusUnauthorized, "unauthorized request received")
+		return
+	}
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		errorResponse(w, http.StatusUnauthorized, fmt.Sprint(err))
+		return
+	}
+	userID, err := auth.ValidateJWT(token, cfg.secretString)
+	if err != nil {
+		errorResponse(w, http.StatusUnauthorized, fmt.Sprint(err))
+		return
+	}
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err = decoder.Decode(&params)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	if params.Email == "" || params.Password == "" {
+		errorResponse(w, http.StatusBadRequest, "must contain updated email and password")
+		return
+	}
+	pwHash, err := auth.HashPassword(params.Password)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	userDb, err := cfg.dbQueries.UpdateUser(context.Background(), database.UpdateUserParams{Email: params.Email, HashedPassword: pwHash, ID: userID})
+	var user user
+	copier.Copy(&user, &userDb)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	data, err := json.Marshal(user)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	jsonResponse(w, http.StatusOK, data)
+}
 func ValidatePassword(password string) error {
 	// Minimum length
 	if len(password) < 8 {
@@ -366,7 +411,7 @@ func (cfg *apiConfig) HandlerRefresh(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusUnauthorized, "token not found")
 		return
 	}
-	if dbUser.RevokedAt.Time.After(time.Now()) {
+	if dbUser.RevokedAt.Time.Before(time.Now()) {
 		errorResponse(w, http.StatusUnauthorized, "expired token")
 		return
 	}
@@ -417,6 +462,7 @@ func main() {
 	sMux.HandleFunc("POST /admin/reset", state.handlerReset)
 	sMux.HandleFunc("POST /api/chirps", state.handlerChirps)
 	sMux.HandleFunc("POST /api/users", state.handlerUsers)
+	sMux.HandleFunc("PUT /api/users", state.handlerUpdateUser)
 	sMux.HandleFunc("GET /api/chirps", state.handlerGetAllChirps)
 	sMux.HandleFunc("GET /api/chirps/{chirpID}", state.handlerGetChirp)
 	sMux.HandleFunc("POST /api/login", state.handlerLogin)
