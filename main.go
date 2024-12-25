@@ -198,10 +198,47 @@ func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusCreated, data)
 }
 func (cfg *apiConfig) handlerGetAllChirps(w http.ResponseWriter, r *http.Request) {
-	dbChirps, err := cfg.dbQueries.GetChirps(context.Background())
-	if err != nil {
-		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
-		return
+	author := r.URL.Query().Get("author_id")
+	sort := true
+	s := r.URL.Query().Get("sort")
+	if s == "desc" {
+		sort = false
+	}
+	var dbChirps []database.Chirp
+	if author == "" {
+		var err error
+		if sort {
+			dbChirps, err = cfg.dbQueries.GetChirps(context.Background())
+			if err != nil {
+				errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+				return
+			}
+		} else {
+			dbChirps, err = cfg.dbQueries.GetChirpsDesc(context.Background())
+			if err != nil {
+				errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+				return
+			}
+		}
+	} else {
+		userID, err := uuid.Parse(author)
+		if err != nil {
+			errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+			return
+		}
+		if sort {
+			dbChirps, err = cfg.dbQueries.GetUserChirps(context.Background(), userID)
+			if err != nil {
+				errorResponse(w, http.StatusNotFound, fmt.Sprint(err))
+				return
+			}
+		} else {
+			dbChirps, err = cfg.dbQueries.GetUserChirpsDesc(context.Background(), userID)
+			if err != nil {
+				errorResponse(w, http.StatusNotFound, fmt.Sprint(err))
+				return
+			}
+		}
 	}
 
 	var chirps []chirp
