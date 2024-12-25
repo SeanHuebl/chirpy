@@ -222,7 +222,7 @@ func (cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request) {
 	}
 	dbChirp, err := cfg.dbQueries.GetChirp(context.Background(), chirpID)
 	if err != nil {
-		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		errorResponse(w, http.StatusNotFound, fmt.Sprint(err))
 		return
 	}
 	var chirp chirp
@@ -238,6 +238,44 @@ func (cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonResponse(w, http.StatusOK, data)
 }
+
+func (cfg *apiConfig) handlerDeleteChirp(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") == "" {
+		errorResponse(w, http.StatusUnauthorized, "unauthorized request received")
+		return
+	}
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		errorResponse(w, http.StatusUnauthorized, fmt.Sprint(err))
+		return
+	}
+	userID, err := auth.ValidateJWT(token, cfg.secretString)
+	if err != nil {
+		errorResponse(w, http.StatusUnauthorized, fmt.Sprint(err))
+		return
+	}
+	chirpID, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil {
+		errorResponse(w, http.StatusBadRequest, fmt.Sprint(err))
+		return
+	}
+	chirpData, err := cfg.dbQueries.GetChirp(context.Background(), chirpID)
+	if err != nil {
+		errorResponse(w, http.StatusNotFound, fmt.Sprint(err))
+		return
+	}
+	if chirpData.UserID != userID {
+		errorResponse(w, http.StatusForbidden, "access denied")
+		return
+	}
+	err = cfg.dbQueries.DeleteChirp(context.Background(), chirpID)
+	if err != nil {
+		errorResponse(w, http.StatusNotFound, fmt.Sprint(err))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	params := parameters{}
@@ -465,6 +503,7 @@ func main() {
 	sMux.HandleFunc("PUT /api/users", state.handlerUpdateUser)
 	sMux.HandleFunc("GET /api/chirps", state.handlerGetAllChirps)
 	sMux.HandleFunc("GET /api/chirps/{chirpID}", state.handlerGetChirp)
+	sMux.HandleFunc("DELETE /api/chirps/{chirpID}", state.handlerDeleteChirp)
 	sMux.HandleFunc("POST /api/login", state.handlerLogin)
 	sMux.HandleFunc("POST /api/refresh", state.HandlerRefresh)
 	sMux.HandleFunc("POST /api/revoke", state.handlerRevoke)
