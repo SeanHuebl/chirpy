@@ -27,6 +27,7 @@ type apiConfig struct {
 	dbQueries      *database.Queries
 	platform       string
 	secretString   string
+	apiKey         string
 }
 
 type parameters struct {
@@ -47,6 +48,7 @@ type user struct {
 	Email        string    `json:"email"`
 	Token        string    `json:"token"`
 	RefreshToken string    `json:"refresh_token"`
+	IsChirpyRed  bool      `json:"is_chirpy_red"`
 }
 
 type chirp struct {
@@ -55,6 +57,13 @@ type chirp struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	Body      string    `json:"body"`
 	UserID    uuid.UUID `json:"user_id"`
+}
+
+type webhook struct {
+	Event string `json:"event"`
+	Data  struct {
+		UserID string `json:"user_id"`
+	} `json:"data"`
 }
 
 func (cfg *apiConfig) middlewareMetricsIncrease(next http.Handler) http.Handler {
@@ -358,6 +367,44 @@ func (cfg *apiConfig) handlerUpdateUser(w http.ResponseWriter, r *http.Request) 
 	}
 	jsonResponse(w, http.StatusOK, data)
 }
+
+func (cfg *apiConfig) handlerWebhooks(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") == "" {
+		errorResponse(w, http.StatusUnauthorized, "unauthorized request received")
+		return
+	}
+	apiKey, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		errorResponse(w, http.StatusBadRequest, fmt.Sprint(err))
+		return
+	}
+	if apiKey != cfg.apiKey {
+		errorResponse(w, http.StatusUnauthorized, fmt.Sprint(err))
+		return
+	}
+	decoder := json.NewDecoder(r.Body)
+	webhook := webhook{}
+	err = decoder.Decode(&webhook)
+	if err != nil {
+		errorResponse(w, http.StatusBadRequest, fmt.Sprint(err))
+		return
+	}
+	if webhook.Event != "user.upgraded" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	userID, err := uuid.Parse(webhook.Data.UserID)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+		return
+	}
+	err = cfg.dbQueries.UpgradeUser(context.Background(), userID)
+	if err != nil {
+		errorResponse(w, http.StatusNotFound, fmt.Sprint(err))
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func ValidatePassword(password string) error {
 	// Minimum length
 	if len(password) < 8 {
@@ -487,6 +534,7 @@ func main() {
 	dbURL := os.Getenv("DB_URL")
 	state.platform = os.Getenv("PLATFORM")
 	state.secretString = os.Getenv("JWT_SECRET")
+	state.apiKey = os.Getenv("POLKA_KEY")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		fmt.Println(err)
@@ -507,6 +555,7 @@ func main() {
 	sMux.HandleFunc("POST /api/login", state.handlerLogin)
 	sMux.HandleFunc("POST /api/refresh", state.HandlerRefresh)
 	sMux.HandleFunc("POST /api/revoke", state.handlerRevoke)
+	sMux.HandleFunc("POST /api/polka/webhooks", state.handlerWebhooks)
 	sMux.Handle("/app/", state.middlewareMetricsIncrease(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
 	server.ListenAndServe()
 }
