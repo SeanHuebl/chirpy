@@ -76,6 +76,44 @@ type webhook struct {
 	} `json:"data"`
 }
 
+// main initializes the server, loads environment variables, and sets up routes for the application.
+func main() {
+	godotenv.Load()
+	sMux := http.NewServeMux()
+	var state apiConfig
+	server := http.Server{
+		Handler: sMux,
+		Addr:    ":8080",
+	}
+	dbURL := os.Getenv("DB_URL")
+	state.platform = os.Getenv("PLATFORM")
+	state.secretString = os.Getenv("JWT_SECRET")
+	state.apiKey = os.Getenv("POLKA_KEY")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	dbQueries := database.New(db)
+	state.dbQueries = dbQueries
+
+	sMux.HandleFunc("GET /api/healthz", handlerHealthz)
+	sMux.HandleFunc("GET /admin/metrics", state.handlerMetrics)
+	sMux.HandleFunc("POST /admin/reset", state.handlerReset)
+	sMux.HandleFunc("POST /api/chirps", state.handlerChirps)
+	sMux.HandleFunc("POST /api/users", state.handlerUsers)
+	sMux.HandleFunc("PUT /api/users", state.handlerUpdateUser)
+	sMux.HandleFunc("GET /api/chirps", state.handlerGetAllChirps)
+	sMux.HandleFunc("GET /api/chirps/{chirpID}", state.handlerGetChirp)
+	sMux.HandleFunc("DELETE /api/chirps/{chirpID}", state.handlerDeleteChirp)
+	sMux.HandleFunc("POST /api/login", state.handlerLogin)
+	sMux.HandleFunc("POST /api/refresh", state.HandlerRefresh)
+	sMux.HandleFunc("POST /api/revoke", state.handlerRevoke)
+	sMux.HandleFunc("POST /api/polka/webhooks", state.handlerWebhooks)
+	sMux.Handle("/app/", state.middlewareMetricsIncrease(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
+	server.ListenAndServe()
+}
+
 // middlewareMetricsIncrease increments the file server hit counter for each incoming request.
 func (cfg *apiConfig) middlewareMetricsIncrease(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -584,42 +622,4 @@ func (cfg *apiConfig) handlerRevoke(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusUnauthorized, fmt.Sprint(err))
 	}
 	jsonResponse(w, http.StatusNoContent, nil)
-}
-
-// main initializes the server, loads environment variables, and sets up routes for the application.
-func main() {
-	godotenv.Load()
-	sMux := http.NewServeMux()
-	var state apiConfig
-	server := http.Server{
-		Handler: sMux,
-		Addr:    ":8080",
-	}
-	dbURL := os.Getenv("DB_URL")
-	state.platform = os.Getenv("PLATFORM")
-	state.secretString = os.Getenv("JWT_SECRET")
-	state.apiKey = os.Getenv("POLKA_KEY")
-	db, err := sql.Open("postgres", dbURL)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	dbQueries := database.New(db)
-	state.dbQueries = dbQueries
-
-	sMux.HandleFunc("GET /api/healthz", handlerHealthz)
-	sMux.HandleFunc("GET /admin/metrics", state.handlerMetrics)
-	sMux.HandleFunc("POST /admin/reset", state.handlerReset)
-	sMux.HandleFunc("POST /api/chirps", state.handlerChirps)
-	sMux.HandleFunc("POST /api/users", state.handlerUsers)
-	sMux.HandleFunc("PUT /api/users", state.handlerUpdateUser)
-	sMux.HandleFunc("GET /api/chirps", state.handlerGetAllChirps)
-	sMux.HandleFunc("GET /api/chirps/{chirpID}", state.handlerGetChirp)
-	sMux.HandleFunc("DELETE /api/chirps/{chirpID}", state.handlerDeleteChirp)
-	sMux.HandleFunc("POST /api/login", state.handlerLogin)
-	sMux.HandleFunc("POST /api/refresh", state.HandlerRefresh)
-	sMux.HandleFunc("POST /api/revoke", state.handlerRevoke)
-	sMux.HandleFunc("POST /api/polka/webhooks", state.handlerWebhooks)
-	sMux.Handle("/app/", state.middlewareMetricsIncrease(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
-	server.ListenAndServe()
 }
