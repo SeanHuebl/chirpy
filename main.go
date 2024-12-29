@@ -533,12 +533,16 @@ func (cfg *apiConfig) HandlerRefresh(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusUnauthorized, "token not found")
 		return
 	}
-	if dbUser.RevokedAt.Time.Before(time.Now()) {
+	if dbUser.RevokedAt.Valid && dbUser.RevokedAt.Time.Before(time.Now()) {
 		errorResponse(w, http.StatusUnauthorized, "expired token")
 		return
 	}
+	jwt, err := auth.MakeJWT(dbUser.UserID, cfg.secretString, time.Hour)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, fmt.Sprint(err))
+	}
 	tokenJSON := map[string]interface{}{
-		"token": dbUser.Token,
+		"token": jwt,
 	}
 	data, err := json.Marshal(tokenJSON)
 	if err != nil {
