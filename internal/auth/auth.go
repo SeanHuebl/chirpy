@@ -1,3 +1,5 @@
+// Package auth provides utilities for password hashing, JWT creation and validation,
+// token generation, and retrieval of authorization headers.
 package auth
 
 import (
@@ -14,8 +16,9 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// HashPassword hashes the provided password using bcrypt.
+// It returns the hashed password as a string or an error if hashing fails.
 func HashPassword(password string) (string, error) {
-
 	hashBytes, err := bcrypt.GenerateFromPassword([]byte(password), 0)
 	if err != nil {
 		log.Fatalf("error signing token: %v", err)
@@ -24,10 +27,14 @@ func HashPassword(password string) (string, error) {
 	return string(hashBytes), nil
 }
 
+// CheckPasswordHash compares a hashed password with a plain-text password.
+// It returns an error if the passwords do not match or the hash is invalid.
 func CheckPasswordHash(password, hash string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 }
 
+// MakeJWT creates a JWT for the given user ID with a specified secret and expiration duration.
+// It returns the signed JWT as a string or an error if signing fails.
 func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, error) {
 	if tokenSecret == "" {
 		return "", fmt.Errorf("invalid secret")
@@ -48,6 +55,8 @@ func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (str
 	return signedToken, nil
 }
 
+// ValidateJWT validates the given JWT using the specified secret.
+// It returns the user ID encoded in the token or an error if validation fails.
 func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -79,6 +88,8 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 	return userID, nil
 }
 
+// GetBearerToken extracts the Bearer token from the Authorization header of an HTTP request.
+// It returns the token or an error if the header is missing or invalid.
 func GetBearerToken(headers http.Header) (string, error) {
 	auth := headers.Get("Authorization")
 	if !strings.HasPrefix(auth, "Bearer ") {
@@ -91,6 +102,8 @@ func GetBearerToken(headers http.Header) (string, error) {
 	return token, nil
 }
 
+// MakeRefreshToken generates a random refresh token as a hex-encoded string.
+// It returns the token or an error if random byte generation fails.
 func MakeRefreshToken() (string, error) {
 	bytes := make([]byte, 32)
 	_, err := rand.Read(bytes)
@@ -98,9 +111,10 @@ func MakeRefreshToken() (string, error) {
 		return "", fmt.Errorf("unable to generate random bytes")
 	}
 	return hex.EncodeToString(bytes), nil
-
 }
 
+// GetAPIKey extracts the API key from the Authorization header of an HTTP request.
+// It returns the API key or an error if the header is missing or invalid.
 func GetAPIKey(headers http.Header) (string, error) {
 	auth := headers.Get("Authorization")
 	if !strings.HasPrefix(auth, "ApiKey ") {
